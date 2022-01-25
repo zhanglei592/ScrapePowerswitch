@@ -4,30 +4,57 @@ library(RSelenium)
 library(httr)
 
 
-rank_info <- data.frame()
+pages <- read.csv("data/WebsitesList.csv")
 
-pages <- read.csv("./WebsitesList.csv")
-
-driver <-  RSelenium::rsDriver(browser = "chrome",port = 4234L,chromever = "92.0.4515.107")
+driver <-  RSelenium::rsDriver(browser = "chrome",port = 4234L,chromever = "97.0.4692.71")
 
 remote_driver <- driver[["client"]] 
 
-#
-for (page in pages[3]){
+rank_info <- data.frame()
+
+for (i in 1:nrow(pages)){
+  
+  i <- 1
+  row <- pages[i,]
+  page <- row$Link
   
   remote_driver$navigate(paste0(page,"?page=10"))
-  web<- read_html(paste0(page,"?page=10"))
-  tag_info <- web %>%
-    html_nodes("div.result-table") %>%
+  Sys.sleep(10)
+  
+  page_source <- remote_driver$getPageSource()[[1]] %>% read_html()
+  
+  company <- page_source %>% 
+    html_nodes("figure.retailer-logo.dn.dib-tablet.ma0") %>% 
+    html_nodes("img") %>% 
+    html_attr("alt")
+  
+  price <- page_source %>% 
+    html_nodes('div.result-individual-eyc.flex.fd-column.w100.order-1.order-2-tablet') %>% 
+    html_nodes("h2") %>% 
     html_text()
+  
+  plan <- page_source %>% 
+    html_nodes("div.w100.flex.ai-flex-end.mb2") %>% 
+    html_nodes("h6") %>% 
+    html_text()
+  
+  plan_tb <- page_source %>% 
+    html_nodes("div.result-tile") %>% 
+    html_nodes("tbody.w100") %>% 
+    html_table()%>% 
+    map(~.x %>% toJSON()) %>% 
+    unlist()
+
+  page_info <- data.frame("company"=company, "price"=price, "plan"=plan, "plan_tb" = plan_tb) %>% 
+    mutate("region" = row$Region ) %>% 
+    select(region, company, price, plan, plan_tb)
+  
+  rank_info <- rbind(rank_info, page_info)
 }
 
+rank_info %>% write_csv("data/rank_info.csv")
 
-
-
-
-a <- read_html(remote_driver$getPageSource()[[2]])
-  
-plan <- a %>% html_nodes("div:nth-of-type(n+4) h6") %>% html_text()
-price <- a %>% html_nodes(".border-r-2-right-bottom-tablet h2") %>% html_text()
-head(plan)
+# Close the remote driver
+remote_driver$close()
+driver$server$stop()
+system("taskkill /im java.exe /f", intern=FALSE, ignore.stdout=FALSE)
